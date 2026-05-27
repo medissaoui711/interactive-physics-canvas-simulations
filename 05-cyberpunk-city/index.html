@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyberpunk Neon Grid</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #05010c; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="cyberCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('cyberCanvas');
+        const ctx = canvas.getContext('2d');
+        let w = canvas.width = window.innerWidth, h = canvas.height = window.innerHeight;
+
+        const buildings = [];
+        for (let i = 0; i < 45; i++) {
+            buildings.push({
+                x: Math.random() * w,
+                w: Math.random() * 60 + 40,
+                h: Math.random() * (h * 0.6) + h * 0.1,
+                speed: Math.random() * 0.8 + 0.2,
+                hue: Math.random() > 0.5 ? 290 : 190
+            });
+        }
+
+        window.addEventListener('resize', () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; });
+
+        function draw() {
+            ctx.fillStyle = '#05010c'; ctx.fillRect(0, 0, w, h);
+            
+            let gradient = ctx.createLinearGradient(w/2, h*0.3, w/2, h*0.7);
+            gradient.addColorStop(0, '#ff0055'); gradient.addColorStop(1, '#05010c');
+            ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(w/2, h*0.6, 120, Math.PI, 0); ctx.fill();
+
+            buildings.forEach(b => {
+                b.x -= b.speed; if (b.x + b.w < 0) b.x = w;
+                ctx.fillStyle = `rgba(${b.hue === 290 ? '40, 0, 50' : '0, 30, 50'}, 0.8)`;
+                ctx.strokeStyle = `hsl(${b.hue}, 100%, 50%)`; ctx.lineWidth = 1;
+                ctx.shadowBlur = 4; ctx.shadowColor = ctx.strokeStyle;
+                ctx.fillRect(b.x, h - b.h, b.w, b.h); ctx.strokeRect(b.x, h - b.h, b.w, b.h);
+            });
+            ctx.shadowBlur = 0;
+            requestAnimationFrame(draw);
+        }
+        draw();
+    </script>
+</body>
+</html>

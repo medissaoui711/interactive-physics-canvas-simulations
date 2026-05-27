@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physarum Slime Mold Engine</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="slimeCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('slimeCanvas');
+        const ctx = canvas.getContext('2d');
+        let w = canvas.width = window.innerWidth, h = canvas.height = window.innerHeight;
+
+        const agents = [];
+        const sensorAngle = 45 * Math.PI / 180, sensorDist = 22, turnSpeed = 0.2, moveSpeed = 1.8;
+
+        for (let i = 0; i < 1800; i++) {
+            agents.push({ x: w/2 + Math.random()*40-20, y: h/2 + Math.random()*40-20, angle: Math.random() * Math.PI * 2 });
+        }
+
+        window.addEventListener('resize', () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; });
+
+        function draw() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.08)'; ctx.fillRect(0, 0, w, h);
+            ctx.fillStyle = '#ccff00';
+
+            agents.forEach(a => {
+                let sL = { x: a.x + Math.cos(a.angle - sensorAngle) * sensorDist, y: a.y + Math.sin(a.angle - sensorAngle) * sensorDist };
+                let sF = { x: a.x + Math.cos(a.angle) * sensorDist, y: a.y + Math.sin(a.angle) * sensorDist };
+                let sR = { x: a.x + Math.cos(a.angle + sensorAngle) * sensorDist, y: a.y + Math.sin(a.angle + sensorAngle) * sensorDist };
+
+                let pL = ctx.getImageData(Math.floor(sL.x + w)%w, Math.floor(sL.y + h)%h, 1, 1).data[1];
+                let pF = ctx.getImageData(Math.floor(sF.x + w)%w, Math.floor(sF.y + h)%h, 1, 1).data[1];
+                let pR = ctx.getImageData(Math.floor(sR.x + w)%w, Math.floor(sR.y + h)%h, 1, 1).data[1];
+
+                if (pF > pL && pF > pR) { }
+                else if (pL > pR) a.angle -= turnSpeed; else if (pR > pL) a.angle += turnSpeed;
+                else a.angle += (Math.random() * 0.4 - 0.2);
+
+                a.x = (a.x + Math.cos(a.angle) * moveSpeed + w) % w;
+                a.y = (a.y + Math.sin(a.angle) * moveSpeed + h) % h;
+
+                ctx.fillRect(a.x, a.y, 1.5, 1.5);
+            });
+            requestAnimationFrame(draw);
+        }
+        draw();
+    </script>
+</body>
+</html>

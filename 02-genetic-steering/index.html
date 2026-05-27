@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evolutionary Steering v2.0</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #05050a; font-family: monospace; }
+        canvas { display: block; }
+        #dashboard { position: absolute; top: 10px; left: 10px; color: #00ffcc; background: rgba(5,5,15,0.85); padding: 12px; border: 1px solid #00f0ff33; pointer-events: none; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div id="dashboard">
+        <strong>EVOLUTIONARY SIMULATION (STABLE V2)</strong><br>
+        Population: <span id="popCount">0</span><br>
+        Generation Max: <span id="maxGen">1</span>
+    </div>
+    <canvas id="evoCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('evoCanvas');
+        const ctx = canvas.getContext('2d');
+        const popCountEl = document.getElementById('popCount');
+        const maxGenEl = document.getElementById('maxGen');
+
+        function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        const agents = [], food = [], poison = [];
+        const INITIAL_AGENTS = 40, MAX_FOOD = 140, MAX_POISON = 45, MUTATION_RATE = 0.15;
+        let globalMaxGeneration = 1;
+
+        const vector = {
+            create: (x = 0, y = 0) => ({ x, y }),
+            dist: (v1, v2) => Math.hypot(v2.x - v1.x, v2.y - v1.y),
+            sub: (v1, v2) => ({ x: v1.x - v2.x, y: v1.y - v2.y }),
+            mult: (v, n) => ({ x: v.x * n, y: v.y * n }),
+            mag: (v) => Math.hypot(v.x, v.y),
+            normalize: (v) => { const m = Math.hypot(v.x, v.y); return m !== 0 ? { x: v.x / m, y: v.y / m } : { x: 0, y: 0 }; },
+            limit: (v, max) => { const m = Math.hypot(v.x, v.y); return m > max ? { x: (v.x / m) * max, y: (v.y / m) * max } : v; }
+        };
+
+        class Vehicle {
+            constructor(x, y, dna = null, generation = 1) {
+                this.pos = vector.create(x, y);
+                this.vel = vector.create(Math.random() * 2 - 1, Math.random() * 2 - 1);
+                this.acc = vector.create(0, 0);
+                this.maxSpeed = 3.2; this.maxForce = 0.5; this.health = 1.0;
+                this.generation = generation;
+                if (generation > globalMaxGeneration) globalMaxGeneration = generation;
+                this.dna = dna ? [...dna] : [Math.random() * 4 - 2, Math.random() * 4 - 2, Math.random() * 120 + 20, Math.random() * 120 + 20];
+            }
+            update() {
+                this.health -= 0.003;
+                this.vel = vector.limit(vector.sub(this.vel, vector.mult(this.acc, -1)), this.maxSpeed);
+                this.pos = vector.sub(this.pos, vector.mult(this.vel, -1));
+                this.acc = vector.create(0, 0);
+                const m = 25;
+                if (this.pos.x < m) this.applyForce(vector.create(this.maxSpeed, 0));
+                if (this.pos.x > window.innerWidth - m) this.applyForce(vector.create(-this.maxSpeed, 0));
+                if (this.pos.y < m) this.applyForce(vector.create(0, this.maxSpeed));
+                if (this.pos.y > window.innerHeight - m) this.applyForce(vector.create(0, -this.maxSpeed));
+            }
+            applyForce(force) { this.acc = vector.sub(this.acc, vector.mult(force, -1)); }
+            behaviors(good, bad) {
+                let steerG = this.seekClosest(good, this.dna[2], 0.2);
+                let steerB = this.seekClosest(bad, this.dna[3], -0.4);
+                this.applyForce(vector.mult(steerG, this.dna[0]));
+                this.applyForce(vector.mult(steerB, this.dna[1]));
+            }
+            seekClosest(list, perception, impact) {
+                let record = Infinity, closestTarget = null;
+                for (let i = list.length - 1; i >= 0; i--) {
+                    const d = vector.dist(this.pos, list[i]);
+                    if (d < 8) { list.splice(i, 1); this.health = Math.min(1.0, this.health + impact); continue; }
+                    if (d < record && d < perception) { record = d; closestTarget = list[i]; }
+                }
+                if (closestTarget) {
+                    let desired = vector.sub(closestTarget, this.pos);
+                    desired = vector.mult(vector.normalize(desired), this.maxSpeed);
+                    return vector.limit(vector.sub(desired, this.vel), this.maxForce);
+                }
+                return vector.create(0, 0);
+            }
+            reproduce() {
+                if (this.health > 0.82 && Math.random() < 0.003) {
+                    this.health *= 0.5;
+                    const cDna = this.dna.map(g => Math.random() < MUTATION_RATE ? g + (Math.random() * 0.4 - 0.2) : g);
+                    return new Vehicle(this.pos.x, this.pos.y, cDna, this.generation + 1);
+                }
+                return null;
+            }
+            draw() {
+                const angle = Math.atan2(this.vel.y, this.vel.x) + Math.PI / 2;
+                ctx.save(); ctx.translate(this.pos.x, this.pos.y); ctx.rotate(angle);
+                const r = Math.floor(Math.max(0, Math.min(255, (1 - this.dna[1]) * 127)));
+                const g = Math.floor(Math.max(0, Math.min(255, this.dna[0] * 127)));
+                ctx.strokeStyle = `rgba(${r}, ${g}, 255, ${this.health})`; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(-4, 6); ctx.lineTo(4, 6); ctx.closePath(); ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        for (let i = 0; i < INITIAL_AGENTS; i++) agents.push(new Vehicle(Math.random() * window.innerWidth, Math.random() * window.innerHeight));
+
+        function loop() {
+            ctx.fillStyle = 'rgba(5, 5, 10, 0.4)'; ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+            if (food.length < MAX_FOOD && Math.random() < 0.3) food.push(vector.create(Math.random() * window.innerWidth, Math.random() * window.innerHeight));
+            if (poison.length < MAX_POISON && Math.random() < 0.08) poison.push(vector.create(Math.random() * window.innerWidth, Math.random() * window.innerHeight));
+
+            ctx.fillStyle = '#00ff66'; food.forEach(f => { ctx.beginPath(); ctx.arc(f.x, f.y, 2, 0, Math.PI*2); ctx.fill(); });
+            ctx.fillStyle = '#ff3333'; poison.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill(); });
+
+            for (let i = agents.length - 1; i >= 0; i--) {
+                agents[i].behaviors(food, poison); agents[i].update(); agents[i].draw();
+                const child = agents[i].reproduce(); if (child) agents.push(child);
+                if (agents[i].health <= 0) { agents.splice(i, 1); }
+            }
+            if (agents.length < 6) agents.push(new Vehicle(Math.random() * window.innerWidth, Math.random() * window.innerHeight));
+            popCountEl.innerText = agents.length; maxGenEl.innerText = globalMaxGeneration;
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
+</body>
+</html>
