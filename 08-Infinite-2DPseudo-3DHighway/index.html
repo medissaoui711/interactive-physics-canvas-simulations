@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Drive Simulation - Eng</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --accent-color: #38bdf8;
+            --ui-panel: rgba(15, 23, 42, 0.85);
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #simulation-container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background: #222;
+        }
+        /* خارطة السير - Route Map */
+        #route-map {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            height: 25px;
+            background: rgba(255, 255, 255, 0.1);
+            -webkit-backdrop-filter: blur(5px); /* دعم متصفح Safari */
+            backdrop-filter: blur(5px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+        }
+        #progress-line {
+            position: absolute;
+            height: 4px;
+            background: linear-gradient(90deg, #f59e0b, #10b981, #3b82f6);
+            width: calc(100% - 30px);
+            border-radius: 2px;
+            z-index: 1;
+        }
+        #car-marker {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: #ef4444;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            top: 50%;
+            transform: translateY(-50%) translateX(50%);
+            z-index: 2;
+            transition: left 0.1s linear;
+            right: 0%; /* تم نقل التنسيق الداخلي إلى هنا */
+        }
+        .stage-node {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            border-radius: 50%;
+            z-index: 3;
+            transform: translateY(-50%);
+            top: 50%;
+        }
+        
+        /* فئات بديلة لمنع التنسيق الداخلي (Inline Styles Fix) */
+        .node-desert { right: 0%; }
+        .node-forest { right: 50%; }
+        .node-future { right: 100%; }
+
+        /* لوحة التحكم والأزرار */
+        #ui-controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+        .btn-group {
+            display: flex;
+            gap: 15px;
+        }
+        button {
+            background: var(--ui-panel);
+            border: 2px solid var(--accent-color);
+            color: #fff;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            -webkit-backdrop-filter: blur(5px); /* دعم متصفح Safari */
+            backdrop-filter: blur(5px);
+            -webkit-user-select: none; /* دعم متصفح Safari */
+            user-select: none;
+        }
+        button:hover {
+            background: var(--accent-color);
+            color: var(--bg-dark);
+            box-shadow: 0 0 15px var(--accent-color);
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+
+<div id="simulation-container">
+    <div id="route-map">
+        <div id="progress-line"></div>
+        <div id="car-marker">🚗</div>
+        <div class="stage-node node-desert" title="الصحراء"></div>
+        <div class="stage-node node-forest" title="الغابة"></div>
+        <div class="stage-node node-future" title="المدينة المستقبلية"></div>
+    </div>
+
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <div id="ui-controls">
+        <div class="btn-group">
+            <button id="btn-left">◀ يسار</button>
+            <button id="btn-right">يمين ▶</button>
+        </div>
+        <div class="btn-group">
+            <button id="btn-brake">فرامل 🛑</button>
+            <button id="btn-gas">زيادة السرعة ⚡</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// إعدادات البيئات الجانبية (Stages Matrix)
+const STAGES = [
+    { name: "الصحراء", sky: "#f97316", ground: "#fef08a", sideItem: "🌵", maxDist: 1000 },
+    { name: "الغابة", sky: "#0284c7", ground: "#15803d", sideItem: "🌲", maxDist: 2000 },
+    { name: "المدينة المستقبلية", sky: "#1e1b4b", ground: "#0f172a", sideItem: "🏢", maxDist: 3000 }
+];
+
+// كائن السيارة (Car Object)
+const car = {
+    x: canvas.width / 2,
+    y: 500,
+    width: 60,
+    height: 100,
+    speed: 5,
+    maxSpeed: 20,
+    targetX: canvas.width / 2,
+    image: new Image()
+};
+car.image.src = "https://i.imgur.com/7S8Zg5f.png"; // سيارة رياضية حقيقية بجودة عالية من الأعلى
+
+// كائن إدارة البيئة والمحاكاة
+class SimulationManager {
+    constructor() {
+        this.totalDistance = 0;
+        this.currentStageIndex = 0;
+        this.roadOffsetY = 0;
+        this.sceneryItems = [];
+        this.initScenery();
+    }
+
+    initScenery() {
+        this.sceneryItems = [];
+        for (let i = 0; i < 15; i++) {
+            this.sceneryItems.push({
+                x: Math.random() > 0.5 ? Math.random() * 150 : Math.random() * 150 + 650,
+                y: Math.random() * canvas.height,
+                char: STAGES[this.currentStageIndex].sideItem,
+                size: Math.random() * 20 + 20
+            });
+        }
+    }
+
+    update() {
+        const currentStage = STAGES[this.currentStageIndex];
+        
+        // تحديث المسافة والسرعة التكرارية
+        if (car.speed > 0.2) {
+            this.totalDistance += car.speed * 0.1;
+            this.roadOffsetY = (this.roadOffsetY + car.speed) % 80;
+            
+            // تحريك الأجسام الجانبية لإعطاء إيحاء الحركة اللانهائية
+            this.sceneryItems.forEach(item => {
+                item.y += car.speed;
+                if (item.y > canvas.height) {
+                    item.y = -50;
+                    item.x = Math.random() > 0.5 ? Math.random() * 150 : Math.random() * 150 + 650;
+                    item.char = currentStage.sideItem;
+                }
+            });
+        }
+
+        // سلاسة حركة القيادة الجانبية
+        car.x += (car.targetX - car.x) * 0.1;
+
+        // مصفوفة فحص تبديل المراحل الجانبية بشكل لانهائي
+        if (this.totalDistance > currentStage.maxDist) {
+            if (this.currentStageIndex < STAGES.length - 1) {
+                this.currentStageIndex++;
+                this.initScenery();
+            } else {
+                this.totalDistance = 0;
+                this.currentStageIndex = 0;
+                this.initScenery();
+            }
+        }
+
+        this.updateUI();
+    }
+
+    updateUI() {
+        // تحديث خارطة السير العلوية برمجياً
+        const maxTrackLength = STAGES[STAGES.length - 1].maxDist;
+        const progressPercent = (this.totalDistance / maxTrackLength) * 100;
+        document.getElementById('car-marker').style.right = `${Math.min(progressPercent, 100)}%`;
+    }
+
+    draw() {
+        const currentTheme = STAGES[this.currentStageIndex];
+
+        // 1. رسم السماء/الخلفية العلوية
+        ctx.fillStyle = currentTheme.sky;
+        ctx.fillRect(0, 0, canvas.width, 200);
+
+        // 2. رسم الأرضية الجانبية
+        ctx.fillStyle = currentTheme.ground;
+        ctx.fillRect(0, 200, canvas.width, canvas.height - 200);
+
+        // 3. رسم الطريق الرئيسي اللانهائي (Infinite Road)
+        ctx.fillStyle = "#475569";
+        ctx.fillRect(200, 200, 400, canvas.height - 200);
+
+        // رسم حواف الطريق (Shoulders)
+        ctx.fillStyle = "#ef4444";
+        ctx.fillRect(190, 200, 10, canvas.height - 200);
+        ctx.fillRect(600, 200, 10, canvas.height - 200);
+
+        // رسم الخطوط المتقطعة المتحركة (Lane Dividers)
+        ctx.fillStyle = "#ffffff";
+        for (let i = 200 + this.roadOffsetY; i < canvas.height; i += 80) {
+            ctx.fillRect(canvas.width / 2 - 5, i, 10, 40);
+        }
+
+        // 4. رسم العناصر الجانبية المتغيرة (Trees/Cacti/Skyscrapers)
+        this.sceneryItems.forEach(item => {
+            ctx.font = `${item.size}px Arial`;
+            ctx.fillText(item.char, item.x, item.y);
+        });
+
+        // 5. رسم السيارة الحقيقية (Real Car Sprite)
+        ctx.save();
+        ctx.translate(car.x, car.y);
+        if (car.image.complete) {
+            ctx.drawImage(car.image, -car.width / 2, -car.height / 2, car.width, car.height);
+        } else {
+            ctx.fillStyle = "#ef4444";
+            ctx.fillRect(-car.width / 2, -car.height / 2, car.width, car.height);
+        }
+        ctx.restore();
+
+        // طباعة معلومات المرحلة الحالية للمستخدم برمجياً
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 20px 'Segoe UI'";
+        ctx.fillText(`المرحلة الحالية: ${currentTheme.name}`, 30, canvas.height - 30);
+    }
+}
+
+const manager = new SimulationManager();
+
+// مهندسي استماع الأحداث للأزرار (Event Listeners)
+document.getElementById('btn-left').addEventListener('mousedown', () => { if(car.targetX > 250) car.targetX -= 50; });
+document.getElementById('btn-right').addEventListener('mousedown', () => { if(car.targetX < 550) car.targetX += 50; });
+document.getElementById('btn-gas').addEventListener('mousedown', () => { if(car.speed < car.maxSpeed) car.speed += 3; });
+document.getElementById('btn-brake').addEventListener('mousedown', () => { if(car.speed > 0) car.speed -= 4; if(car.speed < 0) car.speed = 0; });
+
+// دعم التحكم عبر لوحة المفاتيح أيضاً (Keyboard Support)
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft' && car.targetX > 250) car.targetX -= 40;
+    if (e.key === 'ArrowRight' && car.targetX < 550) car.targetX += 40;
+    if (e.key === 'ArrowUp' && car.speed < car.maxSpeed) car.speed += 2;
+    if (e.key === 'ArrowDown' && car.speed > 0) car.speed -= 2;
+});
+
+// مخرجات حلقة التحديث المستمر (Game Loop)
+function loop() {
+    manager.update();
+    manager.draw();
+    requestAnimationFrame(loop);
+}
+
+// تشغيل المحاكاة فوراً
+loop();
+</script>
+
+</body>
+</html>
